@@ -19,7 +19,7 @@ intents.message_content = True
 intents.messages = True
 intents.guilds = True
 intents.dm_messages = True
-intents.members = True  # Need this for role checking
+# Note: members intent is optional - we'll use ctx.author.roles instead
 bot = commands.Bot(command_prefix='.', intents=intents, help_command=None)
 
 # Server and role restrictions
@@ -151,10 +151,8 @@ def check_admin_role():
     async def predicate(ctx):
         if ctx.guild is None:
             return False
-        member = ctx.guild.get_member(ctx.author.id)
-        if member is None:
-            return False
-        has_role = any(role.id == ADMIN_ROLE_ID for role in member.roles)
+        # Use ctx.author.roles instead of guild.get_member (no members intent needed)
+        has_role = any(role.id == ADMIN_ROLE_ID for role in ctx.author.roles)
         if not has_role:
             await ctx.reply('❌ You do not have permission to use this command!')
         return has_role
@@ -201,8 +199,7 @@ async def help(ctx):
     )
     
     # Show admin commands if user has the role
-    member = ctx.guild.get_member(ctx.author.id)
-    if member and any(role.id == ADMIN_ROLE_ID for role in member.roles):
+    if any(role.id == ADMIN_ROLE_ID for role in ctx.author.roles):
         embed.add_field(
             name="`.token on/off`",
             value="🔒 **Admin Only**: Enable/disable token system\nExample: `.token on` or `.token off`",
@@ -366,7 +363,7 @@ async def deobf(ctx):
         return
     
     # Send initial loading message
-    loading_msg = await ctx.reply("<:Loading:> Loading: Deobfuscating The File.")
+    loading_msg = await ctx.reply("<a:Loading:1447156037885886525> Deobfuscating The File.")
     
     # Download file - determine extension from original filename
     file_ext = '.lua' if attachment.filename.endswith('.lua') else '.txt'
@@ -538,7 +535,7 @@ async def deobf(ctx):
             
             # Add found links if any
             if found_links:
-                links_text = '\n'.join([f"• `{link}`" for link in found_links[:10]])  # Limit to 10 links
+                links_text = '\n'.join([f"• {link}" for link in found_links[:10]])  # Limit to 10 links
                 if len(found_links) > 10:
                     links_text += f"\n... and {len(found_links) - 10} more"
                 embed.add_field(
