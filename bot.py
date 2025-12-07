@@ -8,6 +8,7 @@ import re
 from datetime import datetime, timedelta
 from discord.ext import commands
 from dotenv import load_dotenv
+from urllib.parse import urlparse, unquote
 
 # Load environment variables
 load_dotenv()
@@ -128,37 +129,50 @@ def add_tokens(user_id, amount):
     save_tokens(tokens_data)
 
 def extract_links(text):
-    """Extract and clean URLs from text, excluding bot's Discord link"""
+    """Extract and aggressively clean URLs from text to ensure Discord compatibility"""
+    # Find all potential URLs
     url_pattern = r'https?://[^\s<>"{}|\\^`\[\]]+'
-    links = re.findall(url_pattern, text)
+    potential_links = re.findall(url_pattern, text)
     
     cleaned_links = []
-    for link in links:
-        # Remove trailing punctuation and special characters that break Discord links
-        cleaned = re.sub(r'[^\w\-\.~:/?#\[\]@!$&\'()*+,;=%]+$', '', link)
-        
-        # Additional cleaning: remove trailing periods, commas, parentheses
-        while cleaned and cleaned[-1] in '.,;:)]}!?':
-            cleaned = cleaned[:-1]
-        
-        # Remove any remaining whitespace
-        cleaned = cleaned.strip()
-        
-        # Skip bot's Discord link
-        if 'discord.gg/Y3yt5XMCGj' in cleaned:
-            continue
-        
-        # Validate URL has proper structure
-        if cleaned and '://' in cleaned and len(cleaned) > 10:
-            # Remove any non-ASCII characters that might break the link
-            try:
-                cleaned = cleaned.encode('ascii', 'ignore').decode('ascii')
-            except:
-                pass
+    
+    for link in potential_links:
+        try:
+            # Step 1: Remove everything after common terminators
+            for terminator in ['\n', '\r', '\t', ' ', '"', "'", '<', '>', '{', '}', '|', '\\', '^', '`', '[', ']']:
+                if terminator in link:
+                    link = link.split(terminator)[0]
             
-            # Only add if it's a valid-looking URL
-            if cleaned.startswith(('http://', 'https://')):
-                cleaned_links.append(cleaned)
+            # Step 2: Aggressively remove trailing special characters
+            while link and link[-1] in '.,;:)]}!?"\'>\\|`~@#$%^&*+=':
+                link = link[:-1]
+            
+            # Step 3: Remove URL-encoded characters that might cause issues
+            link = unquote(link)
+            
+            # Step 4: Remove any non-printable ASCII characters
+            link = ''.join(char for char in link if 32 <= ord(char) <= 126)
+            
+            # Step 5: Ensure it's still a valid URL structure
+            if not link.startswith(('http://', 'https://')):
+                continue
+            
+            # Step 6: Parse URL to validate structure
+            parsed = urlparse(link)
+            if not parsed.scheme or not parsed.netloc:
+                continue
+            
+            # Step 7: Skip bot's Discord link
+            if 'discord.gg/Y3yt5XMCGj' in link:
+                continue
+            
+            # Step 8: Final validation - must have protocol and domain
+            if len(link) > 10 and '://' in link and '.' in parsed.netloc:
+                cleaned_links.append(link)
+                
+        except Exception:
+            # If any error occurs, skip this link
+            continue
     
     # Remove duplicates while preserving order
     seen = set()
