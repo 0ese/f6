@@ -146,7 +146,7 @@ def add_header_to_file(filepath):
         with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
             content = f.read()
         
-        header = "-- Deobfuscated By SD [-- https://discord.gg/Y3yt5XMCGj --]\n"
+        header = ""
         
         with open(filepath, 'w', encoding='utf-8') as f:
             f.write(header + content)
@@ -574,3 +574,4 @@ async def deobf(ctx):
             pass
 
 bot.run(TOKEN)
+
