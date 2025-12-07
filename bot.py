@@ -169,7 +169,7 @@ async def on_ready():
 async def help(ctx):
     """Show available commands"""
     embed = discord.Embed(
-        title="🤖 Moonsec Deobfuscator Bot - Commands",
+        title="🤖Bot Commands",
         description="Use these commands to interact with the bot:",
         color=0x5865F2
     )
@@ -184,25 +184,6 @@ async def help(ctx):
         embed.add_field(
             name="`.creds`",
             value="Check your remaining tokens",
-            inline=False
-        )
-        embed.add_field(
-            name="`.gift <user_id> <amount>`",
-            value="Gift tokens to another user\nExample: `.gift 1024565710128689202 100`",
-            inline=False
-        )
-    
-    embed.add_field(
-        name="`.help`",
-        value="Show this help message",
-        inline=False
-    )
-    
-    # Show admin commands if user has the role
-    if any(role.id == ADMIN_ROLE_ID for role in ctx.author.roles):
-        embed.add_field(
-            name="`.token on/off`",
-            value="🔒 **Admin Only**: Enable/disable token system\nExample: `.token on` or `.token off`",
             inline=False
         )
     
