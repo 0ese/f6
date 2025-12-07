@@ -14,7 +14,7 @@ COPY bot.py requirements.txt Dockerfile ./
 # If you've already included src/ in your repo, this will be skipped
 RUN if [ ! -d "src" ]; then \
         echo "Downloading MoonsecDeobfuscator source code..." && \
-        git clone https://github.com/tupsutumppu/MoonsecDeobfuscator.git src; \
+        git clone https://github.com/0ese/Mun-deobf.git src; \
     else \
         echo "Using existing src/ folder"; \
     fi
@@ -50,4 +50,5 @@ COPY --from=build /app/src ./src
 
 # Run the Discord bot
 CMD ["python3", "bot.py"]
+
 
