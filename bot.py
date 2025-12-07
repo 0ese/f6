@@ -363,7 +363,7 @@ async def deobf(ctx):
         return
     
     # Send initial loading message
-    loading_msg = await ctx.reply("<a:Loading:1447156037885886525> Deobfuscating The File.")
+    loading_msg = await ctx.reply("<a:Loading:1447156037885886525> Deobfuscating the file.")
     
     # Download file - determine extension from original filename
     file_ext = '.lua' if attachment.filename.endswith('.lua') else '.txt'
