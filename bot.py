@@ -19,7 +19,6 @@ intents.message_content = True
 intents.messages = True
 intents.guilds = True
 intents.dm_messages = True
-# Note: members intent is optional - we'll use ctx.author.roles instead
 bot = commands.Bot(command_prefix='.', intents=intents, help_command=None)
 
 # Server and role restrictions
@@ -151,7 +150,6 @@ def check_admin_role():
     async def predicate(ctx):
         if ctx.guild is None:
             return False
-        # Use ctx.author.roles instead of guild.get_member (no members intent needed)
         has_role = any(role.id == ADMIN_ROLE_ID for role in ctx.author.roles)
         if not has_role:
             await ctx.reply('❌ You do not have permission to use this command!')
@@ -169,7 +167,7 @@ async def on_ready():
 async def help(ctx):
     """Show available commands"""
     embed = discord.Embed(
-        title="🤖Bot Commands",
+        title="🤖 Bot Commands",
         description="Use these commands to interact with the bot:",
         color=0x5865F2
     )
@@ -514,9 +512,9 @@ async def deobf(ctx):
                 inline=False
             )
             
-            # Add found links if any
+            # Add found links if any - just raw links
             if found_links:
-                links_text = '\n'.join([f"• [{link}]({link})" for link in found_links[:10]])  # Limit to 10 links
+                links_text = '\n'.join(found_links[:10])
                 if len(found_links) > 10:
                     links_text += f"\n... and {len(found_links) - 10} more"
                 embed.add_field(
@@ -536,9 +534,13 @@ async def deobf(ctx):
             )
             view.add_item(decompile_button)
             
-            # Delete loading message and send new message with file (can't edit to add attachments)
-            await loading_msg.delete()
-            await ctx.reply(
+            # Delete loading message and send new message with file
+            try:
+                await loading_msg.delete()
+            except:
+                pass
+            
+            await ctx.send(
                 embed=embed,
                 file=discord.File(output_path, filename=f"deobf_{attachment.filename}"),
                 view=view
