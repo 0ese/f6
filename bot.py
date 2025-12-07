@@ -512,17 +512,6 @@ async def deobf(ctx):
                 inline=False
             )
             
-            # Add found links if any - clickable format
-            if found_links:
-                links_text = '\n'.join([f"[{link}]({link})" for link in found_links[:10]])
-                if len(found_links) > 10:
-                    links_text += f"\n... and {len(found_links) - 10} more"
-                embed.add_field(
-                    name="🔗 Found Links",
-                    value=links_text,
-                    inline=False
-                )
-            
             embed.set_footer(text=f"Requested by {ctx.author.display_name} - {datetime.now().strftime('%m/%d/%y, %I:%M %p')}")
             
             # Create view with decompile button
@@ -540,11 +529,19 @@ async def deobf(ctx):
             except:
                 pass
             
-            await ctx.send(
+            # Send the main message with embed and file
+            msg = await ctx.reply(
                 embed=embed,
                 file=discord.File(output_path, filename=f"deobf_{attachment.filename}"),
                 view=view
             )
+            
+            # Send found links as a separate message (so Discord auto-detects them as clickable)
+            if found_links:
+                links_message = "**🔗 Found Links**\n" + '\n'.join(found_links[:10])
+                if len(found_links) > 10:
+                    links_message += f"\n... and {len(found_links) - 10} more"
+                await msg.reply(links_message)
         else:
             # Failed deobfuscation
             embed = discord.Embed(
