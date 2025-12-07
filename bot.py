@@ -19,13 +19,45 @@ intents.message_content = True
 intents.messages = True
 intents.guilds = True
 intents.dm_messages = True
+intents.members = True  # Need this for role checking
 bot = commands.Bot(command_prefix='.', intents=intents, help_command=None)
+
+# Server and role restrictions
+ALLOWED_SERVER_ID = 1441808704876970026
+ADMIN_ROLE_ID = 1441808742957056092
 
 # Token management
 TOKENS_FILE = 'tokens.json'
+SETTINGS_FILE = 'settings.json'
 INITIAL_TOKENS = 3
 DAILY_TOKENS = 2
 COST_PER_USE = 1
+
+def load_settings():
+    """Load bot settings"""
+    if os.path.exists(SETTINGS_FILE):
+        try:
+            with open(SETTINGS_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            return {'token_system_enabled': True}
+    return {'token_system_enabled': True}
+
+def save_settings(settings):
+    """Save bot settings"""
+    with open(SETTINGS_FILE, 'w') as f:
+        json.dump(settings, f, indent=2)
+
+def is_token_system_enabled():
+    """Check if token system is currently enabled"""
+    settings = load_settings()
+    return settings.get('token_system_enabled', True)
+
+def set_token_system(enabled):
+    """Enable or disable the token system"""
+    settings = load_settings()
+    settings['token_system_enabled'] = enabled
+    save_settings(settings)
 
 def load_tokens():
     if os.path.exists(TOKENS_FILE):
@@ -102,12 +134,40 @@ def extract_links(text):
     links = re.findall(url_pattern, text)
     return list(set(links))  # Remove duplicates
 
+def check_server_restriction():
+    """Check if command is used in allowed server"""
+    async def predicate(ctx):
+        if ctx.guild is None:
+            await ctx.reply('❌ This bot only works in the authorized server!')
+            return False
+        if ctx.guild.id != ALLOWED_SERVER_ID:
+            await ctx.reply('❌ This bot is not authorized to work in this server!')
+            return False
+        return True
+    return commands.check(predicate)
+
+def check_admin_role():
+    """Check if user has the admin role"""
+    async def predicate(ctx):
+        if ctx.guild is None:
+            return False
+        member = ctx.guild.get_member(ctx.author.id)
+        if member is None:
+            return False
+        has_role = any(role.id == ADMIN_ROLE_ID for role in member.roles)
+        if not has_role:
+            await ctx.reply('❌ You do not have permission to use this command!')
+        return has_role
+    return commands.check(predicate)
+
 @bot.event
 async def on_ready():
     print(f'Logged in as {bot.user} (ID: {bot.user.id})')
+    print(f'Token system enabled: {is_token_system_enabled()}')
     print('Bot is ready!')
 
 @bot.command()
+@check_server_restriction()
 async def help(ctx):
     """Show available commands"""
     embed = discord.Embed(
@@ -120,41 +180,74 @@ async def help(ctx):
         value="Deobfuscate a Moonsec V3 obfuscated Lua file\nUsage: `.deobf` (attach a .lua or .txt file)",
         inline=False
     )
-    embed.add_field(
-        name="`.creds`",
-        value="Check your remaining tokens",
-        inline=False
-    )
-    embed.add_field(
-        name="`.gift <user_id> <amount>`",
-        value="Gift tokens to another user\nExample: `.gift 1024565710128689202 100`",
-        inline=False
-    )
+    
+    # Show token-related commands only if system is enabled
+    if is_token_system_enabled():
+        embed.add_field(
+            name="`.creds`",
+            value="Check your remaining tokens",
+            inline=False
+        )
+        embed.add_field(
+            name="`.gift <user_id> <amount>`",
+            value="Gift tokens to another user\nExample: `.gift 1024565710128689202 100`",
+            inline=False
+        )
+    
     embed.add_field(
         name="`.help`",
         value="Show this help message",
         inline=False
     )
-    embed.set_footer(text="Each deobfuscation costs 1 token. You receive 2 free tokens daily.")
+    
+    # Show admin commands if user has the role
+    member = ctx.guild.get_member(ctx.author.id)
+    if member and any(role.id == ADMIN_ROLE_ID for role in member.roles):
+        embed.add_field(
+            name="`.token on/off`",
+            value="🔒 **Admin Only**: Enable/disable token system\nExample: `.token on` or `.token off`",
+            inline=False
+        )
+    
+    if is_token_system_enabled():
+        embed.set_footer(text="Each deobfuscation costs 1 token. You receive 2 free tokens daily.")
+    else:
+        embed.set_footer(text="⚠️ Token system is currently DISABLED - Free deobfuscations for everyone!")
+    
     await ctx.reply(embed=embed)
 
 @bot.command()
+@check_server_restriction()
 async def creds(ctx):
     """Show user's remaining tokens"""
     user_id = ctx.author.id
     tokens = get_user_tokens(user_id)
     
-    embed = discord.Embed(
-        title="💰 Your Credits",
-        description=f"You have **{tokens} token(s)** remaining.",
-        color=0x00FF00 if tokens > 0 else 0xFF0000
-    )
-    embed.set_footer(text="You receive 2 free tokens every day!")
+    if not is_token_system_enabled():
+        embed = discord.Embed(
+            title="💰 Your Credits",
+            description=f"You have **{tokens} token(s)** saved.\n\n⚠️ **Token system is currently DISABLED**\nDeobfuscations are FREE for everyone!",
+            color=0xFFA500
+        )
+        embed.set_footer(text="Your tokens are safe and will be restored when token system is enabled again!")
+    else:
+        embed = discord.Embed(
+            title="💰 Your Credits",
+            description=f"You have **{tokens} token(s)** remaining.",
+            color=0x00FF00 if tokens > 0 else 0xFF0000
+        )
+        embed.set_footer(text="You receive 2 free tokens every day!")
+    
     await ctx.reply(embed=embed)
 
 @bot.command()
+@check_server_restriction()
 async def gift(ctx, user_id: int = None, amount: int = None):
     """Gift tokens to another user"""
+    if not is_token_system_enabled():
+        await ctx.reply('❌ Token system is currently disabled! Gifting is not available.')
+        return
+    
     if user_id is None or amount is None:
         await ctx.reply('❌ Usage: `.gift <user_id> <amount>`\nExample: `.gift 1024565710128689202 100`')
         return
@@ -185,24 +278,78 @@ async def gift(ctx, user_id: int = None, amount: int = None):
     await ctx.reply(embed=embed)
 
 @bot.command()
+@check_server_restriction()
+@check_admin_role()
+async def token(ctx, status: str = None):
+    """Enable or disable the token system (Admin only)"""
+    if status is None:
+        current_status = "ENABLED" if is_token_system_enabled() else "DISABLED"
+        embed = discord.Embed(
+            title="🎫 Token System Status",
+            description=f"Current status: **{current_status}**\n\nUsage:\n• `.token on` - Enable token system\n• `.token off` - Disable token system (free for all)",
+            color=0x00FF00 if is_token_system_enabled() else 0xFF0000
+        )
+        await ctx.reply(embed=embed)
+        return
+    
+    status = status.lower()
+    
+    if status == 'on':
+        if is_token_system_enabled():
+            await ctx.reply('⚠️ Token system is already enabled!')
+            return
+        
+        set_token_system(True)
+        embed = discord.Embed(
+            title="✅ Token System Enabled",
+            description="The token system has been **enabled**!\n\n• Users will need tokens to deobfuscate files\n• All saved tokens have been restored\n• Daily token rewards are active",
+            color=0x00FF00
+        )
+        embed.set_footer(text=f"Enabled by {ctx.author.display_name}")
+        await ctx.reply(embed=embed)
+        print(f"Token system ENABLED by {ctx.author} ({ctx.author.id})")
+        
+    elif status == 'off':
+        if not is_token_system_enabled():
+            await ctx.reply('⚠️ Token system is already disabled!')
+            return
+        
+        set_token_system(False)
+        embed = discord.Embed(
+            title="🔓 Token System Disabled",
+            description="The token system has been **disabled**!\n\n• Deobfuscations are now FREE for everyone\n• User tokens are saved and will be restored when re-enabled\n• Daily token rewards are paused",
+            color=0xFFA500
+        )
+        embed.set_footer(text=f"Disabled by {ctx.author.display_name}")
+        await ctx.reply(embed=embed)
+        print(f"Token system DISABLED by {ctx.author} ({ctx.author.id})")
+        
+    else:
+        await ctx.reply('❌ Invalid option! Use `.token on` or `.token off`')
+
+@bot.command()
+@check_server_restriction()
 async def deobf(ctx):
     """
     Usage: .deobf (attach a .lua file)
     Deobfuscates a Moonsec Lua obfuscated file and returns the result.
     """
-    # Check tokens
+    # Check tokens only if system is enabled
     user_id = ctx.author.id
-    tokens = get_user_tokens(user_id)
+    token_system_active = is_token_system_enabled()
     
-    if tokens < COST_PER_USE:
-        embed = discord.Embed(
-            title="❌ Deobfuscation Failed",
-            description="⚠️ **Insufficient Tokens**\n\nYou don't have enough tokens to use this command.\n\nUse `.creds` to check your token balance.",
-            color=0xFF0000
-        )
-        embed.set_footer(text=f"Requested by {ctx.author.display_name} - {datetime.now().strftime('%m/%d/%y, %I:%M %p')}")
-        await ctx.reply(embed=embed)
-        return
+    if token_system_active:
+        tokens = get_user_tokens(user_id)
+        
+        if tokens < COST_PER_USE:
+            embed = discord.Embed(
+                title="❌ Deobfuscation Failed",
+                description="⚠️ **Insufficient Tokens**\n\nYou don't have enough tokens to use this command.\n\nUse `.creds` to check your token balance.",
+                color=0xFF0000
+            )
+            embed.set_footer(text=f"Requested by {ctx.author.display_name} - {datetime.now().strftime('%m/%d/%y, %I:%M %p')}")
+            await ctx.reply(embed=embed)
+            return
     
     # Find attachment
     if not ctx.message.attachments:
@@ -218,7 +365,8 @@ async def deobf(ctx):
         await ctx.reply('File too large! Maximum size is 5MB.')
         return
     
-    await ctx.reply(f"Received `{attachment.filename}`. Processing... (this may take up to 90 seconds)")
+    # Send initial loading message
+    loading_msg = await ctx.reply("<:Loading:> Loading: Deobfuscating The File.")
     
     # Download file - determine extension from original filename
     file_ext = '.lua' if attachment.filename.endswith('.lua') else '.txt'
@@ -336,16 +484,19 @@ async def deobf(ctx):
                 color=0xFF0000
             )
             embed.set_footer(text=f"Requested by {ctx.author.display_name} - {datetime.now().strftime('%m/%d/%y, %I:%M %p')}")
-            await ctx.reply(embed=embed)
+            await loading_msg.edit(embed=embed, content=None)
             return
         
         processing_time = (datetime.now() - start_time).total_seconds()
         
         # Read output or error
         if os.path.exists(output_path) and os.path.getsize(output_path) > 1:
-            # Use token
-            use_token(user_id)
-            remaining_tokens = get_user_tokens(user_id)
+            # Use token only if system is enabled
+            if token_system_active:
+                use_token(user_id)
+                remaining_tokens = get_user_tokens(user_id)
+            else:
+                remaining_tokens = get_user_tokens(user_id)  # Just get current count, don't deduct
             
             # Read output file
             with open(output_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -370,12 +521,18 @@ async def deobf(ctx):
             )
             
             # Add statistics
+            stats_text = (f"**Original Size:** {original_size / 1024:.2f} KB\n"
+                         f"**Deobfuscated Size:** {output_size / 1024:.2f} KB\n"
+                         f"**Processing Time:** {processing_time:.2f}s\n")
+            
+            if token_system_active:
+                stats_text += f"**Tokens Left:** {remaining_tokens} tokens"
+            else:
+                stats_text += f"**Tokens Saved:** {remaining_tokens} tokens\n⚠️ **FREE MODE** - No tokens used!"
+            
             embed.add_field(
                 name="📊 Statistics",
-                value=f"**Original Size:** {original_size / 1024:.2f} KB\n"
-                      f"**Deobfuscated Size:** {output_size / 1024:.2f} KB\n"
-                      f"**Processing Time:** {processing_time:.2f}s\n"
-                      f"**Tokens Left:** {remaining_tokens} tokens",
+                value=stats_text,
                 inline=False
             )
             
@@ -401,7 +558,8 @@ async def deobf(ctx):
             )
             view.add_item(decompile_button)
             
-            # Send file with embed
+            # Delete loading message and send new message with file (can't edit to add attachments)
+            await loading_msg.delete()
             await ctx.reply(
                 embed=embed,
                 file=discord.File(output_path, filename=f"deobf_{attachment.filename}"),
@@ -415,7 +573,7 @@ async def deobf(ctx):
                 color=0xFF0000
             )
             embed.set_footer(text=f"Requested by {ctx.author.display_name} - {datetime.now().strftime('%m/%d/%y, %I:%M %p')}")
-            await ctx.reply(embed=embed)
+            await loading_msg.edit(embed=embed, content=None)
     except Exception as e:
         embed = discord.Embed(
             title="❌ Deobfuscation Failed",
@@ -423,7 +581,10 @@ async def deobf(ctx):
             color=0xFF0000
         )
         embed.set_footer(text=f"Requested by {ctx.author.display_name} - {datetime.now().strftime('%m/%d/%y, %I:%M %p')}")
-        await ctx.reply(embed=embed)
+        try:
+            await loading_msg.edit(embed=embed, content=None)
+        except:
+            await ctx.reply(embed=embed)
     finally:
         try:
             if os.path.exists(input_path):
