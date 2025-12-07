@@ -516,7 +516,7 @@ async def deobf(ctx):
             
             # Add found links if any
             if found_links:
-                links_text = '\n'.join([f"• {link}" for link in found_links[:10]])  # Limit to 10 links
+                links_text = '\n'.join([f"• [{link}]({link})" for link in found_links[:10]])  # Limit to 10 links
                 if len(found_links) > 10:
                     links_text += f"\n... and {len(found_links) - 10} more"
                 embed.add_field(
