@@ -512,9 +512,9 @@ async def deobf(ctx):
                 inline=False
             )
             
-            # Add found links if any - just raw links
+            # Add found links if any - clickable format
             if found_links:
-                links_text = '\n'.join(found_links[:10])
+                links_text = '\n'.join([f"[{link}]({link})" for link in found_links[:10]])
                 if len(found_links) > 10:
                     links_text += f"\n... and {len(found_links) - 10} more"
                 embed.add_field(
