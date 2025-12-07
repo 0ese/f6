@@ -134,13 +134,41 @@ def extract_links(text):
     
     cleaned_links = []
     for link in links:
+        # Remove trailing punctuation and special characters that break Discord links
         cleaned = re.sub(r'[^\w\-\.~:/?#\[\]@!$&\'()*+,;=%]+$', '', link)
-        if 'discord.gg/Y3yt5XMCGj' not in cleaned:
-            cleaned_links.append(cleaned)
+        
+        # Additional cleaning: remove trailing periods, commas, parentheses
+        while cleaned and cleaned[-1] in '.,;:)]}!?':
+            cleaned = cleaned[:-1]
+        
+        # Remove any remaining whitespace
+        cleaned = cleaned.strip()
+        
+        # Skip bot's Discord link
+        if 'discord.gg/Y3yt5XMCGj' in cleaned:
+            continue
+        
+        # Validate URL has proper structure
+        if cleaned and '://' in cleaned and len(cleaned) > 10:
+            # Remove any non-ASCII characters that might break the link
+            try:
+                cleaned = cleaned.encode('ascii', 'ignore').decode('ascii')
+            except:
+                pass
+            
+            # Only add if it's a valid-looking URL
+            if cleaned.startswith(('http://', 'https://')):
+                cleaned_links.append(cleaned)
     
-    return list(set(cleaned_links))
-
-# Header function removed to avoid decompilation issues
+    # Remove duplicates while preserving order
+    seen = set()
+    unique_links = []
+    for link in cleaned_links:
+        if link not in seen:
+            seen.add(link)
+            unique_links.append(link)
+    
+    return unique_links
 
 def check_server_restriction():
     """Check if command is used in allowed server"""
@@ -460,8 +488,6 @@ async def deobf(ctx):
         processing_time = (datetime.now() - start_time).total_seconds()
         
         if os.path.exists(output_path) and os.path.getsize(output_path) > 1:
-            # No header added - to avoid decompilation issues
-            
             if token_system_active:
                 use_token(user_id)
                 remaining_tokens = get_user_tokens(user_id)
