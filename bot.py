@@ -140,18 +140,7 @@ def extract_links(text):
     
     return list(set(cleaned_links))
 
-def add_header_to_file(filepath):
-    """Add custom header to the deobfuscated file"""
-    try:
-        with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
-            content = f.read()
-        
-        header = ""
-        
-        with open(filepath, 'w', encoding='utf-8') as f:
-            f.write(header + content)
-    except Exception as e:
-        print(f"Error adding header: {e}")
+# Header function removed to avoid decompilation issues
 
 def check_server_restriction():
     """Check if command is used in allowed server"""
@@ -471,7 +460,7 @@ async def deobf(ctx):
         processing_time = (datetime.now() - start_time).total_seconds()
         
         if os.path.exists(output_path) and os.path.getsize(output_path) > 1:
-            add_header_to_file(output_path)
+            # No header added - to avoid decompilation issues
             
             if token_system_active:
                 use_token(user_id)
@@ -574,4 +563,3 @@ async def deobf(ctx):
             pass
 
 bot.run(TOKEN)
-
