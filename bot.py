@@ -10,6 +10,7 @@ from discord.ext import commands
 from dotenv import load_dotenv
 from urllib.parse import urlparse, unquote
 from aiohttp import web
+import aiohttp
 
 # Load environment variables
 load_dotenv()
@@ -33,6 +34,26 @@ SETTINGS_FILE = 'settings.json'
 INITIAL_TOKENS = 3
 DAILY_TOKENS = 2
 COST_PER_USE = 1
+
+# File cleanup tracking
+pending_cleanup_files = []
+
+async def cleanup_file_after_delay(filepath, delay_seconds=120):
+    """Delete a file after specified delay (default 2 minutes)"""
+    await asyncio.sleep(delay_seconds)
+    try:
+        if os.path.exists(filepath):
+            os.remove(filepath)
+            print(f"Cleaned up file: {filepath}")
+            if filepath in pending_cleanup_files:
+                pending_cleanup_files.remove(filepath)
+    except Exception as e:
+        print(f"Error cleaning up file {filepath}: {e}")
+
+def schedule_file_cleanup(filepath, delay_seconds=120):
+    """Schedule a file for cleanup after delay"""
+    pending_cleanup_files.append(filepath)
+    asyncio.create_task(cleanup_file_after_delay(filepath, delay_seconds))
 
 def load_settings():
     """Load bot settings"""
@@ -205,6 +226,32 @@ def extract_links(text):
     
     return unique_links
 
+def is_valid_url(url):
+    """Check if a string is a valid URL"""
+    try:
+        result = urlparse(url)
+        return all([result.scheme in ['http', 'https'], result.netloc])
+    except:
+        return False
+
+async def download_file_from_url(url):
+    """Download file content from URL"""
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                if response.status == 200:
+                    content = await response.read()
+                    # Check file size (5MB limit)
+                    if len(content) > 5 * 1024 * 1024:
+                        return None, "File too large! Maximum size is 5MB."
+                    return content, None
+                else:
+                    return None, f"Failed to download file. HTTP Status: {response.status}"
+    except asyncio.TimeoutError:
+        return None, "Download timed out. Please try again."
+    except Exception as e:
+        return None, f"Error downloading file: {str(e)}"
+
 def check_server_restriction():
     """Check if command is used in allowed server"""
     async def predicate(ctx):
@@ -245,7 +292,7 @@ async def help(ctx):
     )
     embed.add_field(
         name="`.deobf`",
-        value="Deobfuscate a Moonsec V3 obfuscated Lua file\nUsage: `.deobf` (attach a .lua or .txt file)",
+        value="Deobfuscate a Moonsec V3 obfuscated Lua file\n**Usage:** \n• `.deobf` (attach a .lua or .txt file)\n• `.deobf <url>` (provide a direct link to the file)",
         inline=False
     )
     
@@ -374,9 +421,9 @@ async def token(ctx, status: str = None):
 
 @bot.command()
 @check_server_restriction()
-async def deobf(ctx):
+async def deobf(ctx, url: str = None):
     """
-    Usage: .deobf (attach a .lua file)
+    Usage: .deobf (attach a .lua/.txt file) OR .deobf <url>
     Deobfuscates a Moonsec Lua obfuscated file and returns the result.
     """
     user_id = ctx.author.id
@@ -395,28 +442,77 @@ async def deobf(ctx):
             await ctx.reply(embed=embed)
             return
     
-    if not ctx.message.attachments:
-        await ctx.reply('Please upload file using the command')
-        return
-    attachment = ctx.message.attachments[0]
-    if not (attachment.filename.endswith('.lua') or attachment.filename.endswith('.txt')):
-        await ctx.reply('Only .lua and .txt files are supported!')
-        return
+    # Check if URL is provided
+    file_content = None
+    filename = None
+    original_size = 0
+    from_url = False
+    
+    if url:
+        # Validate URL
+        if not is_valid_url(url):
+            await ctx.reply('❌ Invalid URL! Please provide a valid http:// or https:// URL.')
+            return
+        
+        loading_msg = await ctx.reply("<a:Loading:1447156037885886525> Downloading and deobfuscating the file from URL...")
+        
+        # Download file from URL
+        file_content, error = await download_file_from_url(url)
+        if error:
+            await loading_msg.edit(content=f'❌ {error}')
+            return
+        
+        # Extract filename from URL
+        parsed_url = urlparse(url)
+        filename = os.path.basename(parsed_url.path)
+        if not filename or not (filename.endswith('.lua') or filename.endswith('.txt')):
+            filename = 'script.lua'
+        
+        original_size = len(file_content)
+        from_url = True
+        
+    elif ctx.message.attachments:
+        # Use attached file
+        attachment = ctx.message.attachments[0]
+        
+        if not (attachment.filename.endswith('.lua') or attachment.filename.endswith('.txt')):
+            await ctx.reply('❌ Only .lua and .txt files are supported!')
+            return
 
-    if attachment.size > 5 * 1024 * 1024:
-        await ctx.reply('File too large! Maximum size is 5MB.')
+        if attachment.size > 5 * 1024 * 1024:
+            await ctx.reply('❌ File too large! Maximum size is 5MB.')
+            return
+        
+        loading_msg = await ctx.reply("<a:Loading:1447156037885886525> Deobfuscating the file...")
+        
+        filename = attachment.filename
+        original_size = attachment.size
+        from_url = False
+        
+    else:
+        await ctx.reply('❌ Please either attach a .lua/.txt file OR provide a URL!\n**Examples:**\n• `.deobf` (with file attached)\n• `.deobf https://example.com/script.lua`')
         return
     
-    loading_msg = await ctx.reply("<a:Loading:1447156037885886525> Deobfuscating the file.")
-    
-    file_ext = '.lua' if attachment.filename.endswith('.lua') else '.txt'
+    file_ext = '.lua' if filename.endswith('.lua') else '.txt'
     input_fd, input_path = tempfile.mkstemp(suffix=file_ext)
     output_fd, output_path = tempfile.mkstemp(suffix='_deobf.lua')
     os.close(input_fd)
     os.close(output_fd)
     
+    # Only schedule cleanup for URL downloads (2 minutes)
+    if from_url:
+        schedule_file_cleanup(input_path, delay_seconds=120)
+        schedule_file_cleanup(output_path, delay_seconds=120)
+    
     try:
-        await attachment.save(input_path)
+        # Save file content to temp file
+        if file_content:
+            # From URL
+            with open(input_path, 'wb') as f:
+                f.write(file_content)
+        else:
+            # From attachment
+            await ctx.message.attachments[0].save(input_path)
         
         project_dir = os.path.dirname(os.path.abspath(__file__))
         bin_dir = os.path.join(project_dir, 'bin')
@@ -463,7 +559,7 @@ async def deobf(ctx):
                 deobf_exe = 'dotnet'
         
         if not deobf_exe:
-            await ctx.reply('Moonsec deobfuscator executable not found. Please ensure the project is built.')
+            await ctx.reply('❌ Moonsec deobfuscator executable not found. Please ensure the project is built.')
             return
         
         if deobf_exe == 'dotnet':
@@ -485,7 +581,7 @@ async def deobf(ctx):
                     '-o', output_path
                 ]
             else:
-                await ctx.reply('Could not find MoonsecDeobfuscator project file.')
+                await ctx.reply('❌ Could not find MoonsecDeobfuscator project file.')
                 return
         else:
             cmd = [
@@ -535,17 +631,23 @@ async def deobf(ctx):
             found_links = extract_links(output_content)
             
             output_size = os.path.getsize(output_path)
-            original_size = attachment.size
             
             if output_size > 25 * 1024 * 1024:
-                await ctx.reply(f'Deobfuscated file is too large ({output_size / 1024 / 1024:.1f}MB). Discord limit is 25MB.')
+                await ctx.reply(f'❌ Deobfuscated file is too large ({output_size / 1024 / 1024:.1f}MB). Discord limit is 25MB.')
                 return
             
             embed = discord.Embed(
                 title="✅ Deobfuscation Complete",
-                description=f"Successfully deobfuscated {attachment.filename}",
+                description=f"Successfully deobfuscated {filename}",
                 color=0x00FF00
             )
+            
+            if url:
+                embed.add_field(
+                    name="🔗 Source",
+                    value=f"[Original File]({url})",
+                    inline=False
+                )
             
             stats_text = (f"**Original Size:** {original_size / 1024:.2f} KB\n"
                          f"**Deobfuscated Size:** {output_size / 1024:.2f} KB\n"
@@ -572,7 +674,11 @@ async def deobf(ctx):
                     inline=False
                 )
             
-            embed.set_footer(text=f"Requested by {ctx.author.display_name} - {datetime.now().strftime('%m/%d/%y, %I:%M %p')}")
+            # Different footer based on source
+            if from_url:
+                embed.set_footer(text=f"Requested by {ctx.author.display_name} - {datetime.now().strftime('%m/%d/%y, %I:%M %p')} • Temp files auto-delete in 2min")
+            else:
+                embed.set_footer(text=f"Requested by {ctx.author.display_name} - {datetime.now().strftime('%m/%d/%y, %I:%M %p')}")
             
             view = discord.ui.View()
             decompile_button = discord.ui.Button(
@@ -589,7 +695,7 @@ async def deobf(ctx):
             
             await ctx.reply(
                 embed=embed,
-                file=discord.File(output_path, filename=f"deobf_{attachment.filename}"),
+                file=discord.File(output_path, filename=f"deobf_{filename}"),
                 view=view
             )
         else:
@@ -612,16 +718,18 @@ async def deobf(ctx):
         except:
             await ctx.reply(embed=embed)
     finally:
-        try:
-            if os.path.exists(input_path):
-                os.remove(input_path)
-        except Exception:
-            pass
-        try:
-            if os.path.exists(output_path):
-                os.remove(output_path)
-        except Exception:
-            pass
+        # Immediate cleanup for attachment-based deobfuscations
+        if not from_url:
+            try:
+                if os.path.exists(input_path):
+                    os.remove(input_path)
+            except Exception:
+                pass
+            try:
+                if os.path.exists(output_path):
+                    os.remove(output_path)
+            except Exception:
+                pass
 
 # HTTP server for Render (required for free tier web services)
 async def health_check(request):
