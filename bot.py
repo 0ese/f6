@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from discord.ext import commands
 from dotenv import load_dotenv
 from urllib.parse import urlparse, unquote
+from aiohttp import web
 
 # Load environment variables
 load_dotenv()
@@ -622,4 +623,27 @@ async def deobf(ctx):
         except Exception:
             pass
 
-bot.run(TOKEN)
+# HTTP server for Render (required for free tier web services)
+async def health_check(request):
+    return web.Response(text="Bot is running!")
+
+async def start_http_server():
+    app = web.Application()
+    app.router.add_get('/health', health_check)
+    app.router.add_get('/', health_check)
+    
+    port = int(os.getenv('PORT', 10000))
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, '0.0.0.0', port)
+    await site.start()
+    print(f'HTTP server running on port {port}')
+
+async def main():
+    # Start HTTP server first (for Render health checks)
+    await start_http_server()
+    # Then start the Discord bot
+    await bot.start(TOKEN)
+
+if __name__ == "__main__":
+    asyncio.run(main())
