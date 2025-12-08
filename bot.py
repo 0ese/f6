@@ -39,7 +39,7 @@ COST_PER_USE = 1
 pending_cleanup_files = []
 
 async def cleanup_file_after_delay(filepath, delay_seconds=120):
-    """Delete a file after specified delay (default 2 minutes)"""
+    """"""
     await asyncio.sleep(delay_seconds)
     try:
         if os.path.exists(filepath):
@@ -454,7 +454,7 @@ async def deobf(ctx, url: str = None):
             await ctx.reply('❌ Invalid URL! Please provide a valid http:// or https:// URL.')
             return
         
-        loading_msg = await ctx.reply("<a:Loading:1447156037885886525> Downloading and deobfuscating the file from URL...")
+        loading_msg = await ctx.reply("<a:Loading:1447156037885886525> Deobfuscating...")
         
         # Download file from URL
         file_content, error = await download_file_from_url(url)
@@ -755,3 +755,4 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
+
